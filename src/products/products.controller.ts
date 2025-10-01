@@ -1,7 +1,29 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
 import { Product } from './interfaces/product.interface';
 import { ProductsService } from './products.service';
 import { QueryProductDto } from './dto/query-product.dto';
+
+interface FindAllResponse {
+  success: boolean;
+  message: string;
+  data: Product[];
+  pagination: {
+    currentPage: number;
+    itemPerPage: number;
+    totalItems: number;
+    totalPages: number;
+    hasNextPage: boolean;
+    hasPreviousPage: boolean;
+  };
+  filters: {
+    category: string;
+    priceRange: {
+      min: number;
+      max: number | 'unlimited';
+    };
+    search: string;
+  };
+}
 
 @Controller('products')
 export class ProductsController {
@@ -19,7 +41,7 @@ export class ProductsController {
    * GET /products?sortBy=price&order=DESC
    */
   @Get()
-  findAll(@Query() query: QueryProductDto): { success: boolean; message: string; data: Product[] } {
+  findAll(@Query() query: QueryProductDto): FindAllResponse {
     const { page = 1, limit = 10, category, minPrice, maxPrice, search, sortBy = 'createdAt', order = 'DESC' } = query;
     let filteredProducts = [...this.productsService.findAll()];
 
@@ -62,10 +84,41 @@ export class ProductsController {
       }
     });
 
+    // PAGINATION
+    const totalItems = filteredProducts.length;
+    const totalPages = Math.ceil(totalItems / limit);
+    const currentPage = Number(page);
+
+    console.log(totalItems);
+    // Validate page number
+    if (currentPage < 1 || (currentPage > totalPages && totalItems !== 0)) {
+      throw new BadRequestException(`Invalid page number, Must be between 1 and ${totalPages}`);
+    }
+
+    const startIndex = (currentPage - 1) * limit;
+    const endIndex = startIndex + Number(limit);
+    const paginatedProducts = filteredProducts.slice(startIndex, endIndex);
+
     return {
       success: true,
       message: 'Products retrieved successfully',
-      data: filteredProducts,
+      data: paginatedProducts,
+      pagination: {
+        currentPage,
+        itemPerPage: Number(limit),
+        totalItems,
+        totalPages,
+        hasNextPage: currentPage < totalPages,
+        hasPreviousPage: currentPage > 1,
+      },
+      filters: {
+        category: category || 'all',
+        priceRange: {
+          min: minPrice || 0,
+          max: maxPrice || 'unlimited',
+        },
+        search: search || 'none',
+      },
     };
   }
 }
