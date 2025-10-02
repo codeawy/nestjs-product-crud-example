@@ -100,18 +100,13 @@ export class ProductsController {
       }
     });
 
-    // PAGINATION
+    // TOTAL ITEMS
     const totalItems = filteredProducts.length;
     const totalPages = Math.ceil(totalItems / limit);
     const currentPage = Number(page);
 
-    console.log(totalItems);
-    // Validate page number
-    if (currentPage < 1 || (currentPage > totalPages && totalItems !== 0)) {
-      throw new BadRequestException(`Invalid page number, Must be between 1 and ${totalPages}`);
-    }
-
-    const startIndex = (currentPage - 1) * limit;
+    // PAGINATION
+    const startIndex = (currentPage - 1) * Number(limit);
     const endIndex = startIndex + Number(limit);
     const paginatedProducts = filteredProducts.slice(startIndex, endIndex);
 
@@ -198,6 +193,9 @@ export class ProductsController {
    * POST /products
    */
   @Post()
+  @HttpCode(HttpStatus.CREATED)
+  @Header('X-API-Version', '1.0')
+  @Header('x-powered-by', 'NestJS')
   createProduct(@Body() createProductDto: CreateProductDto) {
     console.log(createProductDto);
     const newProduct = { ...createProductDto, id: this.productsService.findAll().length + 1 };
