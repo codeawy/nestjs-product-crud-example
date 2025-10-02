@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Header,
   HttpCode,
@@ -248,6 +249,32 @@ export class ProductsController {
       success: true,
       message: 'Product partially updated successfully',
       updatedFields: Object.keys(updateProductDto),
+      data: this.productsService.findAll()[productIndex],
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  // ============================================
+  // DELETE PRODUCT
+  // ============================================
+  /**
+   * DELETE /products/:id
+   */
+  @Delete(':id')
+  @HttpCode(HttpStatus.OK)
+  @Header('X-API-Version', '1.0')
+  @Header('x-powered-by', 'NestJS')
+  deleteProduct(@Param('id') id: string) {
+    const productId = parseInt(id, 10);
+    const productIndex = this.productsService.findAll().findIndex(p => p.id === productId);
+    if (productIndex === -1) {
+      throw new NotFoundException(`Product with ID ${id} not found`);
+    }
+
+    this.productsService.findAll().splice(productIndex, 1);
+    return {
+      success: true,
+      message: 'Product deleted successfully',
       data: this.productsService.findAll()[productIndex],
       timestamp: new Date().toISOString(),
     };
