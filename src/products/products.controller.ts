@@ -1,4 +1,14 @@
-import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  Header,
+  HttpCode,
+  HttpStatus,
+  NotFoundException,
+  Param,
+  Query,
+} from '@nestjs/common';
 import { Product } from './interfaces/product.interface';
 import { ProductsService } from './products.service';
 import { QueryProductDto } from './dto/query-product.dto';
@@ -41,6 +51,9 @@ export class ProductsController {
    * GET /products?sortBy=price&order=DESC
    */
   @Get()
+  @HttpCode(HttpStatus.OK)
+  @Header('X-API-Version', '1.0')
+  @Header('x-powered-by', 'NestJS')
   findAll(@Query() query: QueryProductDto): FindAllResponse {
     const { page = 1, limit = 10, category, minPrice, maxPrice, search, sortBy = 'createdAt', order = 'DESC' } = query;
     let filteredProducts = [...this.productsService.findAll()];
@@ -119,6 +132,38 @@ export class ProductsController {
         },
         search: search || 'none',
       },
+    };
+  }
+
+  // ============================================
+  // GET SINGLE PRODUCT BY ID (PATH PARAMETER)
+  // ============================================
+  /**
+   * GET /products/:id
+   */
+  @Get(':id')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'public, max-age=300')
+  getProductById(@Param('id') id: string) {
+    const productId = +id;
+
+    //  Validate ID
+    if (isNaN(productId)) {
+      throw new BadRequestException('Product Id must be a number');
+    }
+
+    // Find product
+    const product = this.productsService.findAll().find(p => p.id === productId);
+
+    if (!product) {
+      throw new NotFoundException(`Product with ID ${id} not found`);
+    }
+
+    return {
+      success: true,
+      message: 'Product retrieved successfully',
+      data: product,
+      timestamp: new Date().toISOString(),
     };
   }
 }
