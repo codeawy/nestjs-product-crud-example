@@ -8,6 +8,7 @@ import {
   HttpStatus,
   NotFoundException,
   Param,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -15,6 +16,7 @@ import { Product } from './interfaces/product.interface';
 import { ProductsService } from './products.service';
 import { QueryProductDto } from './dto/query-product.dto';
 import { CreateProductDto } from './dto/create-product.dto';
+import { UpdateProductDto } from './dto/update-product.dto';
 
 interface FindAllResponse {
   success: boolean;
@@ -204,6 +206,50 @@ export class ProductsController {
       success: true,
       message: 'Product created successfully',
       data: newProduct,
+    };
+  }
+  // ============================================
+  // PARTIAL UPDATE PRODUCT
+  // ============================================
+  /**
+   * PATCH /products/1
+   * Body: { "price": 149.99 }  (only update price)
+   */
+  @Patch(':id')
+  @HttpCode(HttpStatus.OK)
+  partialUpdateProduct(@Param('id') id: string, @Body() updateProductDto: UpdateProductDto) {
+    const productId = parseInt(id, 10);
+
+    // Validate ID
+    if (isNaN(productId)) {
+      throw new BadRequestException('Product ID must be a number');
+    }
+
+    // Find product index
+    const productIndex = this.productsService.findAll().findIndex(p => p.id === productId);
+
+    if (productIndex === -1) {
+      throw new NotFoundException(`Product with ID ${id} not found`);
+    }
+
+    // Validate price if provided
+    if (updateProductDto.price !== undefined && updateProductDto.price <= 0) {
+      throw new BadRequestException('Price must be greater than 0');
+    }
+
+    // Only update provided fields
+    this.productsService.findAll()[productIndex] = {
+      ...this.productsService.findAll()[productIndex],
+      ...updateProductDto,
+      updatedAt: new Date(),
+    };
+
+    return {
+      success: true,
+      message: 'Product partially updated successfully',
+      updatedFields: Object.keys(updateProductDto),
+      data: this.productsService.findAll()[productIndex],
+      timestamp: new Date().toISOString(),
     };
   }
 }
