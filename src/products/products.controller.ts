@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
   Header,
@@ -7,11 +8,13 @@ import {
   HttpStatus,
   NotFoundException,
   Param,
+  Post,
   Query,
 } from '@nestjs/common';
 import { Product } from './interfaces/product.interface';
 import { ProductsService } from './products.service';
 import { QueryProductDto } from './dto/query-product.dto';
+import { CreateProductDto } from './dto/create-product.dto';
 
 interface FindAllResponse {
   success: boolean;
@@ -164,6 +167,45 @@ export class ProductsController {
       message: 'Product retrieved successfully',
       data: product,
       timestamp: new Date().toISOString(),
+    };
+  }
+
+  // ============================================
+  // GET PRODUCTS BY CATEGORY (PATH PARAMETER)
+  // ============================================
+  /**
+   * GET /products/category/Electronics
+   */
+
+  @Get('category/:categoryName')
+  getProductByCategory(@Param('categoryName') categoryName: string) {
+    const products = this.productsService
+      .findAll()
+      .filter(p => p.category.toLowerCase() === categoryName.toLowerCase() && p.isActive);
+
+    return {
+      success: true,
+      message: `Products in category '${categoryName}' retrieved successfully`,
+      category: categoryName,
+      data: products,
+    };
+  }
+
+  // ============================================
+  // CREATE NEW PRODUCT
+  // ============================================
+  /**
+   * POST /products
+   */
+  @Post()
+  createProduct(@Body() createProductDto: CreateProductDto) {
+    console.log(createProductDto);
+    const newProduct = { ...createProductDto, id: this.productsService.findAll().length + 1 };
+
+    return {
+      success: true,
+      message: 'Product created successfully',
+      data: newProduct,
     };
   }
 }
