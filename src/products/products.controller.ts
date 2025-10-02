@@ -7,48 +7,40 @@ import {
   Header,
   HttpCode,
   HttpStatus,
-  NotFoundException,
+  Logger,
   Param,
   Patch,
   Post,
   Query,
+  ParseIntPipe,
 } from '@nestjs/common';
-import { Product } from './interfaces/product.interface';
+import type { Product } from './interfaces/product.interface';
 import { ProductsService } from './products.service';
-import { QueryProductDto } from './dto/query-product.dto';
-import { CreateProductDto } from './dto/create-product.dto';
-import { UpdateProductDto } from './dto/update-product.dto';
+import type { QueryProductDto } from './dto/query-product.dto';
+import type { CreateProductDto } from './dto/create-product.dto';
+import type { UpdateProductDto } from './dto/update-product.dto';
+import type { ApiResponse, PaginatedApiResponse, ProductUpdateResponse } from './interfaces/api-response.interface';
 
-interface FindAllResponse {
-  success: boolean;
-  message: string;
-  data: Product[];
-  pagination: {
-    currentPage: number;
-    itemPerPage: number;
-    totalItems: number;
-    totalPages: number;
-    hasNextPage: boolean;
-    hasPreviousPage: boolean;
-  };
-  filters: {
-    category: string;
-    priceRange: {
-      min: number;
-      max: number | 'unlimited';
-    };
-    search: string;
-  };
-}
-
+/**
+ * Controller for managing products
+ *
+ * This controller handles all HTTP requests related to product management,
+ * including CRUD operations, filtering, searching, and pagination.
+ *
+ * @class ProductsController
+ */
 @Controller('products')
 export class ProductsController {
+  private readonly logger = new Logger(ProductsController.name);
+
   constructor(private readonly productsService: ProductsService) {}
 
-  // ============================================
-  // GET ALL PRODUCTS WITH FILTERING & PAGINATION
-  // ============================================
   /**
+   * Get all products with optional filtering, pagination, and sorting
+   *
+   * @param query - Query parameters for filtering, pagination, and sorting
+   * @returns Paginated response with products and metadata
+   * @example
    * GET /products
    * GET /products?page=1&limit=10
    * GET /products?category=Electronics
@@ -60,60 +52,25 @@ export class ProductsController {
   @HttpCode(HttpStatus.OK)
   @Header('X-API-Version', '1.0')
   @Header('x-powered-by', 'NestJS')
-  findAll(@Query() query: QueryProductDto): FindAllResponse {
-    const { page = 1, limit = 10, category, minPrice, maxPrice, search, sortBy = 'createdAt', order = 'DESC' } = query;
-    let filteredProducts = [...this.productsService.findAll()];
+  findAll(@Query() query: QueryProductDto): PaginatedApiResponse<Product> {
+    this.logger.log(`Finding products with query: ${JSON.stringify(query)}`);
 
-    // ** FILTERING
-    if (category) {
-      filteredProducts = filteredProducts.filter(product => product.category.toLowerCase() === category.toLowerCase());
-    }
+    const { page = 1, limit = 10, category, minPrice, maxPrice, search } = query;
 
-    if (minPrice !== undefined) {
-      filteredProducts = filteredProducts.filter(p => p.price >= minPrice);
-    }
-    if (maxPrice !== undefined) {
-      filteredProducts = filteredProducts.filter(p => p.price <= maxPrice);
-    }
+    // Get filtered and sorted products from service
+    const allProducts = this.productsService.findAll(query);
 
-    if (search) {
-      const searchLower = search.toLowerCase();
-      filteredProducts = filteredProducts.filter(
-        p =>
-          p.name.toLowerCase().includes(searchLower) ||
-          p.description.toLowerCase().includes(searchLower) ||
-          p.category.toLowerCase().includes(searchLower),
-      );
-    }
-
-    // SORTING
-    filteredProducts.sort((a, b) => {
-      let aValue = a[sortBy];
-      let bValue = b[sortBy];
-
-      if (sortBy === 'createdAt') {
-        aValue = new Date(aValue).getTime();
-        bValue = new Date(bValue).getTime();
-      }
-
-      if (order == 'ASC') {
-        return aValue > bValue ? 1 : -1;
-      } else {
-        return aValue < bValue ? 1 : -1;
-      }
-    });
-
-    // TOTAL ITEMS
-    const totalItems = filteredProducts.length;
+    // Calculate pagination
+    const totalItems = allProducts.length;
     const totalPages = Math.ceil(totalItems / limit);
     const currentPage = Number(page);
 
-    // PAGINATION
+    // Apply pagination
     const startIndex = (currentPage - 1) * Number(limit);
     const endIndex = startIndex + Number(limit);
-    const paginatedProducts = filteredProducts.slice(startIndex, endIndex);
+    const paginatedProducts = allProducts.slice(startIndex, endIndex);
 
-    return {
+    const response: PaginatedApiResponse<Product> = {
       success: true,
       message: 'Products retrieved successfully',
       data: paginatedProducts,
@@ -133,150 +90,175 @@ export class ProductsController {
         },
         search: search || 'none',
       },
+      timestamp: new Date().toISOString(),
     };
+
+    this.logger.log(`Found ${totalItems} products, returning ${paginatedProducts.length} for page ${currentPage}`);
+
+    return response;
   }
 
-  // ============================================
-  // GET SINGLE PRODUCT BY ID (PATH PARAMETER)
-  // ============================================
   /**
-   * GET /products/:id
+   * Get a single product by ID
+   *
+   * @param id - Product ID (parsed as integer)
+   * @returns Product data with success response
+   * @throws BadRequestException if ID is not a valid number
+   * @throws NotFoundException if product is not found
+   * @example
+   * GET /products/1
    */
   @Get(':id')
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'public, max-age=300')
-  getProductById(@Param('id') id: string) {
-    const productId = +id;
+  getProductById(@Param('id', ParseIntPipe) id: number): ApiResponse<Product> {
+    this.logger.log(`Finding product with ID: ${id}`);
 
-    //  Validate ID
-    if (isNaN(productId)) {
-      throw new BadRequestException('Product Id must be a number');
-    }
+    const product = this.productsService.findById(id);
 
-    // Find product
-    const product = this.productsService.findAll().find(p => p.id === productId);
-
-    if (!product) {
-      throw new NotFoundException(`Product with ID ${id} not found`);
-    }
-
-    return {
+    const response: ApiResponse<Product> = {
       success: true,
       message: 'Product retrieved successfully',
       data: product,
       timestamp: new Date().toISOString(),
     };
+
+    this.logger.log(`Product found: ${product.name}`);
+
+    return response;
   }
 
-  // ============================================
-  // GET PRODUCTS BY CATEGORY (PATH PARAMETER)
-  // ============================================
   /**
+   * Get products by category
+   *
+   * @param categoryName - Category name (case-insensitive)
+   * @returns Array of active products in the specified category
+   * @example
    * GET /products/category/Electronics
    */
-
   @Get('category/:categoryName')
-  getProductByCategory(@Param('categoryName') categoryName: string) {
-    const products = this.productsService
-      .findAll()
-      .filter(p => p.category.toLowerCase() === categoryName.toLowerCase() && p.isActive);
+  @HttpCode(HttpStatus.OK)
+  getProductByCategory(@Param('categoryName') categoryName: string): ApiResponse<Product[]> & { category: string } {
+    this.logger.log(`Finding products in category: ${categoryName}`);
 
-    return {
+    const products = this.productsService.findByCategory(categoryName, true);
+
+    const response: ApiResponse<Product[]> & { category: string } = {
       success: true,
       message: `Products in category '${categoryName}' retrieved successfully`,
-      category: categoryName,
       data: products,
+      category: categoryName,
+      timestamp: new Date().toISOString(),
     };
+
+    this.logger.log(`Found ${products.length} products in category: ${categoryName}`);
+
+    return response;
   }
 
-  // ============================================
-  // CREATE NEW PRODUCT
-  // ============================================
   /**
+   * Create a new product
+   *
+   * @param createProductDto - Product data for creation
+   * @returns Created product with success response
+   * @example
    * POST /products
+   * Body: {
+   *   "name": "New Product",
+   *   "description": "Product description",
+   *   "price": 99.99,
+   *   "stock": 10,
+   *   "category": "Electronics",
+   *   "isActive": true
+   * }
    */
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @Header('X-API-Version', '1.0')
   @Header('x-powered-by', 'NestJS')
-  createProduct(@Body() createProductDto: CreateProductDto) {
-    console.log(createProductDto);
-    const newProduct = { ...createProductDto, id: this.productsService.findAll().length + 1 };
+  createProduct(@Body() createProductDto: CreateProductDto): ApiResponse<Product> {
+    this.logger.log(`Creating new product: ${createProductDto.name}`);
 
-    return {
+    const newProduct = this.productsService.create(createProductDto);
+
+    const response: ApiResponse<Product> = {
       success: true,
       message: 'Product created successfully',
       data: newProduct,
+      timestamp: new Date().toISOString(),
     };
+
+    this.logger.log(`Product created with ID: ${newProduct.id}`);
+
+    return response;
   }
-  // ============================================
-  // PARTIAL UPDATE PRODUCT
-  // ============================================
   /**
+   * Partially update an existing product
+   *
+   * @param id - Product ID (parsed as integer)
+   * @param updateProductDto - Partial product data to update
+   * @returns Updated product with success response
+   * @throws BadRequestException if ID is not a valid number or validation fails
+   * @throws NotFoundException if product is not found
+   * @example
    * PATCH /products/1
-   * Body: { "price": 149.99 }  (only update price)
+   * Body: { "price": 149.99, "stock": 5 }
    */
   @Patch(':id')
   @HttpCode(HttpStatus.OK)
-  partialUpdateProduct(@Param('id') id: string, @Body() updateProductDto: UpdateProductDto) {
-    const productId = parseInt(id, 10);
-
-    // Validate ID
-    if (isNaN(productId)) {
-      throw new BadRequestException('Product ID must be a number');
-    }
-
-    // Find product index
-    const productIndex = this.productsService.findAll().findIndex(p => p.id === productId);
-
-    if (productIndex === -1) {
-      throw new NotFoundException(`Product with ID ${id} not found`);
-    }
+  partialUpdateProduct(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateProductDto: UpdateProductDto,
+  ): ProductUpdateResponse {
+    this.logger.log(`Updating product with ID: ${id}`);
 
     // Validate price if provided
     if (updateProductDto.price !== undefined && updateProductDto.price <= 0) {
       throw new BadRequestException('Price must be greater than 0');
     }
 
-    // Only update provided fields
-    this.productsService.findAll()[productIndex] = {
-      ...this.productsService.findAll()[productIndex],
-      ...updateProductDto,
-      updatedAt: new Date(),
-    };
+    const updatedProduct = this.productsService.update(id, updateProductDto);
 
-    return {
+    const response: ProductUpdateResponse = {
       success: true,
       message: 'Product partially updated successfully',
+      data: updatedProduct,
       updatedFields: Object.keys(updateProductDto),
-      data: this.productsService.findAll()[productIndex],
       timestamp: new Date().toISOString(),
     };
+
+    this.logger.log(`Product updated: ${updatedProduct.name}, fields: ${response.updatedFields.join(', ')}`);
+
+    return response;
   }
 
-  // ============================================
-  // DELETE PRODUCT
-  // ============================================
   /**
-   * DELETE /products/:id
+   * Delete a product by ID
+   *
+   * @param id - Product ID (parsed as integer)
+   * @returns Deleted product with success response
+   * @throws NotFoundException if product is not found
+   * @example
+   * DELETE /products/1
    */
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
   @Header('X-API-Version', '1.0')
   @Header('x-powered-by', 'NestJS')
-  deleteProduct(@Param('id') id: string) {
-    const productId = parseInt(id, 10);
-    const productIndex = this.productsService.findAll().findIndex(p => p.id === productId);
-    if (productIndex === -1) {
-      throw new NotFoundException(`Product with ID ${id} not found`);
-    }
+  deleteProduct(@Param('id', ParseIntPipe) id: number): ApiResponse<Product> {
+    this.logger.log(`Deleting product with ID: ${id}`);
 
-    this.productsService.findAll().splice(productIndex, 1);
-    return {
+    const deletedProduct = this.productsService.delete(id);
+
+    const response: ApiResponse<Product> = {
       success: true,
       message: 'Product deleted successfully',
-      data: this.productsService.findAll()[productIndex],
+      data: deletedProduct,
       timestamp: new Date().toISOString(),
     };
+
+    this.logger.log(`Product deleted: ${deletedProduct.name}`);
+
+    return response;
   }
 }
